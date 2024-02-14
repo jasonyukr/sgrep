@@ -239,9 +239,9 @@ binsrch(const char *key, FILE *fp, int reverse) {
 
 /* print all lines that match the key or else just the number of matches */
 
-static void
+static int
 printmatch(const char *key, FILE *fp, off_t start,
-    const char *fname, int cflag)
+    const char *fname, int cflag, int max_count)
 {
     int c, count;
 
@@ -249,6 +249,9 @@ printmatch(const char *key, FILE *fp, off_t start,
         fseeko(fp, start, SEEK_SET);
     }
     for (count = 0; start >= 0 && compare(key, fp) == 0; count++) {
+        if (max_count != -1 && count >= max_count) {
+            break;
+        }
         fseeko(fp, start, SEEK_SET);
         if (cflag == 0 && fname != 0) {
             fputs(fname, stdout);
@@ -274,6 +277,7 @@ printmatch(const char *key, FILE *fp, off_t start,
         }
         printf("%d\n", count);
     }
+    return count;
 }
 
 int
@@ -285,11 +289,16 @@ main(int argc, char **argv) {
     off_t where;
     struct stat st;
     extern int optind, opterr;
+    char *mvalue = NULL;
+    int max_count;
+    int count;
+    int total_count;
+    int count_remain;
 
     /* parse command line options */
 
     opterr = 0;
-    while ((i = getopt(argc, argv, "bcfinr")) > 0 && i != '?') {
+    while ((i = getopt(argc, argv, "bcfinm:r")) > 0 && i != '?') {
         switch(i) {
         case 'b':
             bflag++;
@@ -306,18 +315,30 @@ main(int argc, char **argv) {
             nflag++;
             iflag = 0;
             break;
+        case 'm':
+            mvalue = optarg;
+            break;
         case 'r':
             rflag++;
             break;
         }
     }
     if (i == '?' || optind >= argc) {
-        fputs ("Usage: sgrep [ -i | -n ] [ -c ] [ -b ] [ -r ] key "
+        fputs ("Usage: sgrep [ -i | -n ] [ -c ] [ -b ] [ -r ] [ -m max_count ] key "
             "[ sorted_file ... ]\n", stderr);
         exit(2);
     }
     i = optind;
     key = argv[i++];
+
+    if (mvalue) {
+        max_count = atoi(mvalue);
+        if (max_count == 0) {
+            max_count = -1;
+        }
+    } else {
+        max_count = -1;
+    }
 
     /* select the comparison function */
 
@@ -340,13 +361,19 @@ main(int argc, char **argv) {
             exit(2);
         }
         where = binsrch(key, stdin, rflag);
-        printmatch(key, stdin, where, 0, cflag);
+        printmatch(key, stdin, where, 0, cflag, max_count);
         exit(where < 0);
     }
 
     /* search each input file */
 
+    total_count = 0;
+    count_remain = max_count;
     for (status = 1; i < argc; i++) {
+        if (max_count != -1 && total_count >= max_count) {
+            // already reached the end
+            break;
+        }
         if ((fp = fopen(argv[i], "r")) == 0) {
             fprintf(stderr, "sgrep:  could not open %s\n", argv[i]);
             status = 2;
@@ -360,7 +387,12 @@ main(int argc, char **argv) {
             continue;
         }
         where = binsrch(key, fp, rflag);
-        printmatch(key, fp, where, numfile == 1 ? 0 : argv[i], cflag);
+        count = printmatch(key, fp, where, numfile == 1 ? 0 : argv[i], cflag, count_remain);
+        if (max_count != -1) {
+            count_remain -= count;
+        }
+        total_count += count;
+
         if (status == 1 && where >= 0) {
             status = 0;
         }
