@@ -326,6 +326,7 @@ main(int argc, char **argv) {
     if (i == '?' || optind >= argc) {
         fputs ("Usage: sgrep [ -i | -n ] [ -c ] [ -b ] [ -r ] [ -m max_count ] key "
             "[ sorted_file ... ]\n", stderr);
+        fputs ("  note that sorted_file should be generated from 'LC_ALL=C sort ...'\n", stderr);
         exit(2);
     }
     i = optind;
